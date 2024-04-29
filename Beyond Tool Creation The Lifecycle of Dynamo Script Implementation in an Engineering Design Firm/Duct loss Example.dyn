@@ -1,0 +1,1110 @@
+{
+  "Uuid": "ac2b3126-ca80-416f-8ad5-366b06a31960",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "Sharable Version",
+  "ElementResolver": {
+    "ResolutionMap": {
+      "DesignScript.Builtin.Dictionary": {
+        "Key": "DesignScript.Builtin.Dictionary",
+        "Value": "DesignScriptBuiltin.dll"
+      },
+      "DSCore": {
+        "Key": "DSCore.String",
+        "Value": "DSCoreNodes.dll"
+      }
+    }
+  },
+  "Inputs": [
+    {
+      "Id": "05ff0faff04348ce9a1f7b2c153c8ac9",
+      "Name": "File Path",
+      "Type": "string",
+      "Type2": "string",
+      "Value": "No file selected.",
+      "Description": "Allows you to select a file on the system and returns its file path",
+      "SelectedIndex": 0
+    },
+    {
+      "Id": "9f4b2e7307864d7db674b5bc57451981",
+      "Name": "New Sheet Name",
+      "Type": "string",
+      "Type2": "string",
+      "Value": "",
+      "Description": "Creates a string",
+      "SelectedIndex": 0
+    },
+    {
+      "Id": "b0b884ced90a45b6ae7e8cbe78df35f0",
+      "Name": "Select Model Element",
+      "Type": "selection",
+      "Type2": "hostSelection",
+      "Value": "bba659af-724e-4b85-850d-0a8d096040ae-0016617c",
+      "Description": "Select a model element from the document.",
+      "SelectedIndex": 0
+    },
+    {
+      "Id": "c0f59c26c5844ecda816239af2e80f1f",
+      "Name": "Select Model Element",
+      "Type": "selection",
+      "Type2": "hostSelection",
+      "Value": "bba659af-724e-4b85-850d-0a8d096040ae-0016620e",
+      "Description": "Select a model element from the document.",
+      "SelectedIndex": 0
+    },
+    {
+      "Id": "483aea04c0304b99a1b7afd05a3c7ce9",
+      "Name": "Isolate Elements in View?",
+      "Type": "boolean",
+      "Type2": "boolean",
+      "Value": "true",
+      "Description": "Enables selection between True and False",
+      "SelectedIndex": 0
+    }
+  ],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "\r\n\r\nimport clr\r\n\r\n# Add RevitAPIUI and RevitAPI references\r\n\r\nclr.AddReference('RevitAPI')\r\n\r\nfrom Autodesk.Revit.DB import ElementId, BuiltInCategory, XYZ, Line\r\n\r\n\r\n\r\n\"\"\"\r\nMain Code Execution:\r\n\r\nIterates over each element in the provided elems list. Each element in this list is expected to be a tuple or list of three ducts.\r\n\r\nIt uses the get_connection_point function to determine the connection points and the list of other elements connected to the second duct.\r\n\r\nThen, it uses filter_and_sort_ducts to filter and sort these connected elements based on their distance to the connection points.\r\n\r\nThe sorted list of elements, along with their index in the main elems list, is appended to the OUT list.\r\n\r\n\"\"\"\r\n\r\n\r\n\r\n\r\n# Preparing input from Dynamo to Revit\r\nelems = UnwrapElement(IN[0])\r\n\r\n\r\ndef xyz_to_tuple(revit_xyz):\r\n    return (revit_xyz.X, revit_xyz.Y, revit_xyz.Z)\r\n    \r\ndef get_connection_point(duct2,duct1=None, duct3=None):\r\n    if duct1 is not None:\r\n        try:\r\n            connectors1 = duct1.ConnectorManager.Connectors\r\n        except:\r\n            connectors1 = duct1.MEPModel.ConnectorManager.Connectors\r\n\r\n    try:\r\n        connectors2 = duct2.ConnectorManager.Connectors\r\n    except:\r\n        connectors2 = duct2.MEPModel.ConnectorManager.Connectors\r\n\r\n    start_point = None\r\n    end_point = None\r\n    connected_elements = []\r\n\r\n    if duct1 is not None:\r\n        for connector1 in connectors1:\r\n            for connector2 in connectors2:\r\n                if connector1.IsConnectedTo(connector2):\r\n                    start_point = connector1.Origin\r\n                    start_point = xyz_to_tuple(start_point)\r\n\r\n    if duct3 is not None:\r\n        try:\r\n            connectors3 = duct3.ConnectorManager.Connectors\r\n        except:\r\n            connectors3 = duct3.MEPModel.ConnectorManager.Connectors\r\n\r\n        for connector2 in connectors2:\r\n            for connector3 in connectors3:\r\n                if connector2.IsConnectedTo(connector3):\r\n                    end_point = connector2.Origin\r\n                    end_point = xyz_to_tuple(end_point)\r\n                    break\r\n\r\n            if end_point is not None:\r\n                break\r\n\r\n    for connector2 in connectors2:\r\n        for connected_connector in connector2.AllRefs:\r\n            connected_element = connected_connector.Owner\r\n            if connected_element.Category.Id == ElementId(BuiltInCategory.OST_MechanicalEquipment) or connected_element.Category.Id == ElementId(BuiltInCategory.OST_DuctCurves):\r\n                continue\r\n            if duct1 is not None and connected_element.Id == duct1.Id:\r\n                continue\r\n            if duct3 is not None and connected_element.Id == duct3.Id:\r\n                continue\r\n            if connected_element.Category.Id == ElementId(BuiltInCategory.OST_DuctSystem):\r\n                continue\r\n            connected_elements.append(connected_element)\r\n\r\n    return start_point, end_point, connected_elements\r\n\r\n\r\n\r\ndef distance_to_line(point, line_start, line_end):\r\n    line_dir = (line_end - line_start).Normalize()\r\n    vector_to_point = point - line_start\r\n    proj_length = vector_to_point.DotProduct(line_dir)\r\n    proj_point = line_start + proj_length * line_dir\r\n    return point.DistanceTo(proj_point)\r\n\r\ndef filter_and_sort_ducts(start_tuple=None, end_tuple=None, ducts=None):\r\n    if ducts is None:\r\n        ducts = []\r\n\r\n    if start_tuple is not None:\r\n        start_xyz = XYZ(*start_tuple)\r\n    if end_tuple is not None:\r\n        end_xyz = XYZ(*end_tuple)\r\n\r\n    if start_tuple is not None and end_tuple is not None:\r\n        line = Line.CreateBound(start_xyz, end_xyz)\r\n\r\n    ducts_within_range = []\r\n    for duct in ducts:\r\n        try:\r\n            connector_manager = duct.ConnectorManager\r\n        except:\r\n            connector_manager = duct.MEPModel.ConnectorManager\r\n        if connector_manager:\r\n            for connector in connector_manager.Connectors:\r\n                point = connector.Origin\r\n\r\n                if start_tuple is not None and end_tuple is not None:\r\n                    distance_to_start = point.DistanceTo(start_xyz)\r\n                    distance_to_end = point.DistanceTo(end_xyz)\r\n\r\n                    # Check if the point is within the range\r\n                    if distance_to_start <= start_xyz.DistanceTo(end_xyz) and distance_to_end <= start_xyz.DistanceTo(end_xyz):\r\n                        ducts_within_range.append((duct, distance_to_start))\r\n                        break\r\n                elif start_tuple is not None:\r\n                    distance_to_start = point.DistanceTo(start_xyz)\r\n                    ducts_within_range.append((duct, distance_to_start))\r\n                    break\r\n                elif end_tuple is not None:\r\n                    distance_to_end = point.DistanceTo(end_xyz)\r\n                    ducts_within_range.append((duct, distance_to_end))\r\n                    break\r\n\r\n    # Sort the ducts by their distance from the start point or endpoint, whichever is available\r\n    sorted_ducts = sorted(ducts_within_range, key=lambda x: x[1])\r\n\r\n    # Return the list of duct elements, ordered by distance from the start point or endpoint\r\n    return [duct for duct, distance in sorted_ducts]\r\n\r\nOUT = []\r\nfor index, i in enumerate(elems):\r\n    if i:\r\n        duct1 = i[0]\r\n        duct2 = i[1]\r\n        duct3 = i[2]\r\n  \r\n        start, end, elems, = get_connection_point(duct2,duct1,duct3)\r\n        OUT.append([index, filter_and_sort_ducts(start, end, elems)])\r\n\r\n",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "6d6c6dbfb4f34254b2249cce8c2a7bce",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "f36e6818bd6d47c89a40faa5be4bab52",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "f47f36d97be84136862a780f0ea1bb5c",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "53fef85f67a24e39bf375510ea3f4194",
+      "NodeType": "FunctionNode",
+      "Inputs": [
+        {
+          "Id": "58c214e9cbbc4ab38e7f787b2c1bc7e8",
+          "Name": "object",
+          "Description": "An object.\n\nvar",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "46df0350a05240299a799a422a20676d",
+          "Name": "object",
+          "Description": "Same object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "DSCore.Object.Identity@var",
+      "Replication": "Auto",
+      "Description": "Returns what is passed in, doing nothing.\n\nObject.Identity (object: var): var[]..[]"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "c095a0fd1f6a4fc4ba0e3dc9ff87f06a",
+      "NodeType": "FunctionNode",
+      "Inputs": [
+        {
+          "Id": "ff1796daea7941a9ab6ecf39597dfa54",
+          "Name": "list",
+          "Description": "List to be checked if it is empty\n\nvar[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": true,
+          "KeepListStructure": true
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "42f30fe1dd7545e9aff1b43c68858de7",
+          "Name": "bool",
+          "Description": "True if list is empty, false if it isnt",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "DSCore.List.IsEmpty@var[]..[]",
+      "Replication": "Auto",
+      "Description": "Determines if the given list is empty.\n\nList.IsEmpty (list: var[]..[]): bool"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "ed10a06356d34f16b3c3ea3c98369cb7",
+      "NodeType": "FunctionNode",
+      "Inputs": [
+        {
+          "Id": "4d2e6f322e4246a5973cab2b50d7b6b6",
+          "Name": "list",
+          "Description": "List to be checked on whether any item is true.\n\nvar[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": true,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "140fcfe4195e4a91bfbc00970e43872c",
+          "Name": "bool",
+          "Description": "Whether any item is true.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "DSCore.List.AnyTrue@var[]..[]",
+      "Replication": "Auto",
+      "Description": "Determines if any item in the given list is a boolean and has a true value.\n\nList.AnyTrue (list: var[]..[]): bool"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "import os\r\nimport math\r\nimport clr\r\nfrom collections import deque\r\n\r\nclr.AddReference('RevitAPI')\r\nclr.AddReference('RevitAPIUI')\r\nclr.AddReference('RevitServices')\r\nclr.AddReference(\"RevitNodes\")\r\n\r\nfrom Autodesk.Revit.DB import *\r\nfrom Autodesk.Revit.UI import UIApplication, TaskDialog\r\nimport Autodesk\r\n\r\nimport Revit\r\nclr.ImportExtensions(Revit.Elements)\r\nclr.ImportExtensions(Revit.GeometryConversion)\r\n\r\nfrom RevitServices.Persistence import DocumentManager\r\nfrom RevitServices.Transactions import TransactionManager\r\n\r\ndoc = DocumentManager.Instance.CurrentDBDocument\r\nuidoc = DocumentManager.Instance.CurrentUIApplication.ActiveUIDocument\r\n\r\n#Preparing input from dynamo to revit\r\nstart = UnwrapElement(IN[0])\r\nend = UnwrapElement(IN[1])\r\n  \r\n    \r\ndef get_connected_elements(duct):\r\n    try:\r\n        connectors = duct.ConnectorManager.Connectors\r\n    except:\r\n        connectors = duct.MEPModel.ConnectorManager.Connectors\r\n    connected_elements = []\r\n    for connector in connectors:\r\n        for connected_connector in connector.AllRefs:\r\n            connected_element = connected_connector.Owner\r\n            if connected_element.Id != duct.Id and connected_element.Category.Name != \"Duct Systems\":\r\n                connected_elements.append(connected_element)\r\n    return connected_elements\r\n    return connected_elements\r\n\r\n\r\n\r\n\r\n\r\ndef is_reachable(node, target, visited=None):\r\n    if visited is None:\r\n        visited = set()\r\n\r\n    if node.Id == target.Id:\r\n        return True\r\n\r\n    if node.Id in visited:\r\n        return False\r\n\r\n    visited.add(node.Id)\r\n    connected_elements = get_connected_elements(node)\r\n\r\n    for element in connected_elements:\r\n        if element.Id not in visited and is_reachable(element, target, visited):\r\n            return True\r\n\r\n    return False\r\n\r\n\r\ndef find_path(start_duct, end_duct, visited=None, path=None):\r\n    if visited is None:\r\n        visited = set()\r\n    if path is None:\r\n        path = []\r\n\r\n    visited.add(start_duct.Id)\r\n    path.append(start_duct)\r\n\r\n    if start_duct.Id == end_duct.Id:\r\n        return path\r\n\r\n    connected_elements = get_connected_elements(start_duct)\r\n    \r\n    for element in connected_elements:\r\n        if element.Id not in visited:\r\n            # Check if the end duct is reachable from the current element\r\n            if is_reachable(element, end_duct):\r\n                result = find_path(element, end_duct, visited, path)\r\n                if result:\r\n                    return result\r\n\r\n    path.pop()\r\n    visited.remove(start_duct.Id)\r\n\r\n    return None\r\n\r\n\r\n\r\n\r\n\r\n\r\ncomplete_path = find_path(start, end)\r\nOUT = complete_path\r\n            \r\n           \r\n\r\n\r\n",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "b0453efc105d4e04b46761b0a76c4ec2",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "c8e490f21d214fc58b635d1f7cab9009",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "60312cd024cf44dc9a7587584eeeb3a2",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "bacb2c5d4f0a472c9d4ad28f2a32c55a",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "import clr\r\nclr.AddReference('RevitAPIUI')\r\n\r\nfrom Autodesk.Revit.UI import UIApplication, TaskDialog\r\ncomplete_path = IN[0]\r\n\r\nif not complete_path:\r\n    msg = \"Please ensure that the duct system is fully connected. To quickly identify any disconnected paths, tab into the duct to highlight the entire system, revealing any unconnected sections.\"\r\n    title = \"Incomplete Duct System Connection\"\r\n    alert = TaskDialog\r\n    OUT = alert.Show(title, msg)",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "d9b9b0e0c2a54dda832fd4659200c6d5",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "07fbbf833c0145c288927a3713806938",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "f81739db3cd04ce8bd3f239e933165d6",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "#from Autodesk.Revit.DB import BuiltInCategory, ElementId\r\n\r\ndef has_multiple_connections(i, duct, path):\r\n    try:\r\n        connectors = duct.ConnectorManager.Connectors\r\n    except:\r\n        connectors = duct.MEPModel.ConnectorManager.Connectors\r\n    connected_fittings = []\r\n    for connector in connectors:\r\n        for connected_connector in connector.AllRefs:\r\n            connected_element = connected_connector.Owner\r\n            if connected_element.Category.Name == \"Duct Fittings\" and connected_element.Id not in [e.Id for e in path]:\r\n                connected_fittings.append(connected_element)\r\n    if len(connected_fittings) > 0:\r\n        prev_element = None if i == 0 else path[i - 1]\r\n        next_element = None if i == len(path) - 1 else path[i + 1]\r\n        tuple_elements = (prev_element, duct, next_element)\r\n        # Checking for the None scenario you mentioned and replacing the last element in the tuple if it's None\r\n        if tuple_elements[-1] is None:\r\n            tuple_elements = None\r\n        return tuple_elements\r\n    else:\r\n        return None\r\n\r\nsys = UnwrapElement(IN[0])\r\nOUT = []\r\n\r\nfor i, duct in enumerate(sys):\r\n    OUT.append(has_multiple_connections(i, duct, sys))\r\n",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "7573026aacd74050b3f405bf1838cc86",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "8b8c03f01f7047edaf8eabdf8a6a1e22",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "71655818357a41a9b1b6c36b31bc61d2",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "4aee9a80aaee429b90bd433e08b142d9",
+      "NodeType": "FunctionNode",
+      "Inputs": [
+        {
+          "Id": "20dd4ea87aa741ba9170407ddf5f16dc",
+          "Name": "object",
+          "Description": "An object.\n\nvar",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "75a12c2c32ed4aefbb07abd2a93853d5",
+          "Name": "object",
+          "Description": "Same object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "DSCore.Object.Identity@var",
+      "Replication": "Auto",
+      "Description": "Returns what is passed in, doing nothing.\n\nObject.Identity (object: var): var[]..[]"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.Filename, CoreNodeModels",
+      "Id": "05ff0faff04348ce9a1f7b2c153c8ac9",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "db4ebaf75bb54865a3e6cdbe83b83fd5",
+          "Name": "",
+          "Description": "File Path",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows you to select a file on the system and returns its file path",
+      "HintPath": "D:\\OneDrive\\Information_1\\AGC - Conference Notes\\Beyond Tool Creation\\No file selected",
+      "InputValue": "No file selected."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "Id": "9f4b2e7307864d7db674b5bc57451981",
+      "NodeType": "StringInputNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "9a1f8f5316bc46739cda391ad367f1b8",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string",
+      "InputValue": ""
+    },
+    {
+      "ConcreteType": "Dynamo.Nodes.DSModelElementSelection, DSRevitNodesUI",
+      "NodeType": "ExtensionNode",
+      "InstanceId": [
+        "bba659af-724e-4b85-850d-0a8d096040ae-0016617c"
+      ],
+      "Id": "b0b884ced90a45b6ae7e8cbe78df35f0",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "bfb5c76246dc4941b4385a36f4c327c8",
+          "Name": "Element",
+          "Description": "The selected elements.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Select a model element from the document."
+    },
+    {
+      "ConcreteType": "Dynamo.Nodes.DSModelElementSelection, DSRevitNodesUI",
+      "NodeType": "ExtensionNode",
+      "InstanceId": [
+        "bba659af-724e-4b85-850d-0a8d096040ae-0016620e"
+      ],
+      "Id": "c0f59c26c5844ecda816239af2e80f1f",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "cac4e3b981cc4973bdbb74fa3e0f9e6c",
+          "Name": "Element",
+          "Description": "The selected elements.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Select a model element from the document."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.BoolSelector, CoreNodeModels",
+      "Id": "483aea04c0304b99a1b7afd05a3c7ce9",
+      "NodeType": "BooleanInputNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "5b5e752f029344f9aa92257da57972fa",
+          "Name": "",
+          "Description": "Boolean",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Enables selection between True and False",
+      "InputValue": true
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "d146d60c49d54add80578e7b92fdaff7",
+      "NodeType": "FunctionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "287a03c71eda446cac5498efbaa23425",
+          "Name": "Document",
+          "Description": "Document",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "Revit.Application.Document.Current",
+      "Replication": "Auto",
+      "Description": "Get the current document\n\nDocument.Current: Document"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "Id": "c9d674fe1efc4a43bc58be48e8379221",
+      "NodeType": "CodeBlockNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "9b0925986cf6445883d9f907f6b47ec8",
+          "Name": "",
+          "Description": "Value of expression at line 1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows for DesignScript code to be authored directly",
+      "Code": "[];"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Logic.RefactoredIf, CoreNodeModels",
+      "Id": "9d6c9f61704e48c49b536b2c0a46878b",
+      "NodeType": "ExtensionNode",
+      "Inputs": [
+        {
+          "Id": "a7353147199946c98b779370bd5294a7",
+          "Name": "test",
+          "Description": "Boolean test",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "c9d998a56c2c4adb90ade6ba5a992e91",
+          "Name": "true",
+          "Description": "Returned if test is true",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "0cd7390be4dd46b9bdce35f474064ea7",
+          "Name": "false",
+          "Description": "Returned if test is false",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "2020facc4e0743c0bad96410d88172f8",
+          "Name": "result",
+          "Description": "Result block produced",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Returns the result of either True or False input depending on what boolean value is toggled in the test input. Supports recursion which requires that only a single branch be executed. It's critical that that both True and False branches are isolated and do not interact with each other!"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "42c1a41baaa24970a18e02ff7ecdd1e3",
+      "NodeType": "FunctionNode",
+      "Inputs": [
+        {
+          "Id": "128f05334b464257807be4b17a5d654d",
+          "Name": "document",
+          "Description": "Revit.Application.Document",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "503640555b3d48378b49a9277880d1d7",
+          "Name": "View",
+          "Description": "View",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "Revit.Application.Document.ActiveView",
+      "Replication": "Auto",
+      "Description": "Get the active view for the document\n\nDocument.ActiveView: View"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "Id": "3b87c59f083d434aaac543043375c899",
+      "NodeType": "FunctionNode",
+      "Inputs": [
+        {
+          "Id": "ca9faa7579c24f28be5e6e64a38dfc4f",
+          "Name": "view",
+          "Description": "Revit.Elements.Views.View",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "7abb96e45d3b41b39c6a5e65787e3dd6",
+          "Name": "elements",
+          "Description": "Element[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "d515b97e6fb44a9d85b612fb8fd13703",
+          "Name": "View",
+          "Description": "View",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "FunctionSignature": "Revit.Elements.Views.View.IsolateElementsTemporary@Revit.Elements.Element[]",
+      "Replication": "Auto",
+      "Description": "Set elements to be temporarily isolated in the view. To isolate a group completely, you must also include all members of all groups and nested groups in your input.\n\nView.IsolateElementsTemporary (elements: Element[]): View"
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "f47f36d97be84136862a780f0ea1bb5c",
+      "End": "ff1796daea7941a9ab6ecf39597dfa54",
+      "Id": "fdbaf6a2747f4dec9e8d6bcd9a82f24b",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "46df0350a05240299a799a422a20676d",
+      "End": "f36e6818bd6d47c89a40faa5be4bab52",
+      "Id": "9991672ade8547f4b862f5561cb2ea31",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "42f30fe1dd7545e9aff1b43c68858de7",
+      "End": "4d2e6f322e4246a5973cab2b50d7b6b6",
+      "Id": "3f6e99a1b0af40c3940143adb3ca107b",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "bacb2c5d4f0a472c9d4ad28f2a32c55a",
+      "End": "20dd4ea87aa741ba9170407ddf5f16dc",
+      "Id": "921ea770615e4d3bafd43e6ff6ef9e1e",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "71655818357a41a9b1b6c36b31bc61d2",
+      "End": "58c214e9cbbc4ab38e7f787b2c1bc7e8",
+      "Id": "14bfc246931848c086f6d75c4c954133",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "75a12c2c32ed4aefbb07abd2a93853d5",
+      "End": "07fbbf833c0145c288927a3713806938",
+      "Id": "528bd76d6cd048dcad0928d169d333dd",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "75a12c2c32ed4aefbb07abd2a93853d5",
+      "End": "8b8c03f01f7047edaf8eabdf8a6a1e22",
+      "Id": "ba9d702a82e64dc6b73105757cb6f3a6",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "75a12c2c32ed4aefbb07abd2a93853d5",
+      "End": "7abb96e45d3b41b39c6a5e65787e3dd6",
+      "Id": "369ee6438af343e29b887cd7b16bdda5",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "bfb5c76246dc4941b4385a36f4c327c8",
+      "End": "c8e490f21d214fc58b635d1f7cab9009",
+      "Id": "40dbae8a45e74478b75dc38603cd37b6",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "cac4e3b981cc4973bdbb74fa3e0f9e6c",
+      "End": "60312cd024cf44dc9a7587584eeeb3a2",
+      "Id": "b1c63b52a2784210a1a56626768af037",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "5b5e752f029344f9aa92257da57972fa",
+      "End": "a7353147199946c98b779370bd5294a7",
+      "Id": "88b525e691a942d5a0501890d8d5e6b3",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "287a03c71eda446cac5498efbaa23425",
+      "End": "128f05334b464257807be4b17a5d654d",
+      "Id": "aa09991ffc8840038beb32395321efbf",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "9b0925986cf6445883d9f907f6b47ec8",
+      "End": "0cd7390be4dd46b9bdce35f474064ea7",
+      "Id": "3ef8ac84561042dc91765a2332c699ee",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "2020facc4e0743c0bad96410d88172f8",
+      "End": "ca9faa7579c24f28be5e6e64a38dfc4f",
+      "Id": "c568fca83ccf4c609ba316db130230fe",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "503640555b3d48378b49a9277880d1d7",
+      "End": "c9d998a56c2c4adb90ade6ba5a992e91",
+      "Id": "de1ca42697d54a239ec9cfeb6d270c58",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.12",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "1.10",
+      "Data": {}
+    }
+  ],
+  "Author": "None provided",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.19.3.6394",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -1240.526123046875,
+      "EyeY": 146.25022888183594,
+      "EyeZ": 1385.788818359375,
+      "LookX": -13.1949462890625,
+      "LookY": -25.08074951171875,
+      "LookZ": -17.9560546875,
+      "UpX": -0.34805825352668762,
+      "UpY": 0.80901700258255,
+      "UpZ": -0.47365295886993408
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Id": "6d6c6dbfb4f34254b2249cce8c2a7bce",
+        "Name": "Python Script",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1560.0380850898098,
+        "Y": -1241.1373676169119
+      },
+      {
+        "Id": "53fef85f67a24e39bf375510ea3f4194",
+        "Name": "Object.Identity",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1279.1728083299627,
+        "Y": -1241.5066788323525
+      },
+      {
+        "Id": "c095a0fd1f6a4fc4ba0e3dc9ff87f06a",
+        "Name": "List.IsEmpty",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1793.4916610543421,
+        "Y": -1234.6160564009679
+      },
+      {
+        "Id": "ed10a06356d34f16b3c3ea3c98369cb7",
+        "Name": "List.AnyTrue",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1998.2825768915852,
+        "Y": -1236.1993758240585
+      },
+      {
+        "Id": "b0453efc105d4e04b46761b0a76c4ec2",
+        "Name": "Python - Gets Duct Route",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 299.037939997368,
+        "Y": -1416.82999344889
+      },
+      {
+        "Id": "d9b9b0e0c2a54dda832fd4659200c6d5",
+        "Name": "Dialog Alert",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 954.24769097382,
+        "Y": -1596.2868236377353
+      },
+      {
+        "Id": "7573026aacd74050b3f405bf1838cc86",
+        "Name": "Python Script",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 958.230712009374,
+        "Y": -1227.2300112269995
+      },
+      {
+        "Id": "4aee9a80aaee429b90bd433e08b142d9",
+        "Name": "Object.Identity",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 582.371235694385,
+        "Y": -1435.2219236890332
+      },
+      {
+        "Id": "05ff0faff04348ce9a1f7b2c153c8ac9",
+        "Name": "File Path",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": -44.415301538059566,
+        "Y": -2148.765711009567
+      },
+      {
+        "Id": "9f4b2e7307864d7db674b5bc57451981",
+        "Name": "New Sheet Name",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": -72.447347992969242,
+        "Y": -2007.4064686731931
+      },
+      {
+        "Id": "b0b884ced90a45b6ae7e8cbe78df35f0",
+        "Name": "Select Model Element",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": -122.3809519574724,
+        "Y": -1611.0410521024937
+      },
+      {
+        "Id": "c0f59c26c5844ecda816239af2e80f1f",
+        "Name": "Select Model Element",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": -114.83715798969968,
+        "Y": -1427.0058539920299
+      },
+      {
+        "Id": "483aea04c0304b99a1b7afd05a3c7ce9",
+        "Name": "Isolate Elements in View?",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": -112.24622734978152,
+        "Y": -1037.410398399621
+      },
+      {
+        "Id": "d146d60c49d54add80578e7b92fdaff7",
+        "Name": "Document.Current",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1318.4957717355335,
+        "Y": -2052.4133263560057
+      },
+      {
+        "Id": "c9d674fe1efc4a43bc58be48e8379221",
+        "Name": "Code Block",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1848.4403738303233,
+        "Y": -2082.7296027126754
+      },
+      {
+        "Id": "9d6c9f61704e48c49b536b2c0a46878b",
+        "Name": "If",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 2067.3625272839136,
+        "Y": -2182.0165250144055
+      },
+      {
+        "Id": "42c1a41baaa24970a18e02ff7ecdd1e3",
+        "Name": "Document.ActiveView",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1561.461026623763,
+        "Y": -2104.4458099505755
+      },
+      {
+        "Id": "3b87c59f083d434aaac543043375c899",
+        "Name": "View.IsolateElementsTemporary",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 2366.1666226292928,
+        "Y": -2101.1520130036656
+      }
+    ],
+    "Annotations": [
+      {
+        "Id": "94c5a25843d345cdafcb200b93fa0148",
+        "Title": "Start Input",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "abcbe54d45454a49ae38671d8fa7be0d"
+        ],
+        "HasNestedGroups": false,
+        "Left": -149.39590920626944,
+        "Top": -1874.2515264289989,
+        "Width": 316.0,
+        "Height": 152.0,
+        "FontSize": 24.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": -1815.2515264289989,
+        "InitialHeight": 145.0,
+        "TextblockHeight": 49.0,
+        "Background": "#FFB0C4DE"
+      },
+      {
+        "Id": "758ed66ec20f4ec78acb226c283a9d46",
+        "Title": "Temporary Isolate Elments in Active View.",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "36caebce09614299b1fc5d49803fc99b"
+        ],
+        "HasNestedGroups": false,
+        "Left": -108.86191476341014,
+        "Top": -1241.4442035690045,
+        "Width": 231.0,
+        "Height": 165.0,
+        "FontSize": 24.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": -1125.4442035690045,
+        "InitialHeight": 145.0,
+        "TextblockHeight": 106.0,
+        "Background": "#FFB0C4DE"
+      },
+      {
+        "Id": "cefb137f72eb4dba95ee091c30e4c55d",
+        "Title": "Main Path - No Branches",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "b0453efc105d4e04b46761b0a76c4ec2"
+        ],
+        "HasNestedGroups": false,
+        "Left": 289.037939997368,
+        "Top": -1532.82999344889,
+        "Width": 283.00000000000006,
+        "Height": 278.0,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": -1416.82999344889,
+        "InitialHeight": 145.0,
+        "TextblockHeight": 106.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "689b99608f3c46b6a4a7a2f14351406b",
+        "Title": "Isolate Elements in View",
+        "DescriptionText": "",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "3b87c59f083d434aaac543043375c899",
+          "42c1a41baaa24970a18e02ff7ecdd1e3",
+          "d146d60c49d54add80578e7b92fdaff7",
+          "9d6c9f61704e48c49b536b2c0a46878b",
+          "c9d674fe1efc4a43bc58be48e8379221"
+        ],
+        "HasNestedGroups": false,
+        "Left": 1308.4957717355335,
+        "Top": -2255.0165250144055,
+        "Width": 1382.6708508937593,
+        "Height": 334.60319865839983,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": -2182.0165250144055,
+        "InitialHeight": 274.603198658394,
+        "TextblockHeight": 63.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "81a2b85320f64257ae02a42249aae9ee",
+        "Title": "Update python to exclude index and elements if the elements list is empty",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [],
+        "HasNestedGroups": false,
+        "Left": 1557.4804126903234,
+        "Top": -1298.5278490051612,
+        "Width": 0.0,
+        "Height": 0.0,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "36caebce09614299b1fc5d49803fc99b",
+        "Title": "Temporary Isolate Elements in View",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [],
+        "HasNestedGroups": false,
+        "Left": -98.861914763410141,
+        "Top": -1117.4442035690045,
+        "Width": 0.0,
+        "Height": 0.0,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "abcbe54d45454a49ae38671d8fa7be0d",
+        "Title": "Your first selection should be equipment, fitting, or accessory.\r\n\r\nNote: A Duct can be selected if it doesn't have taps.",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [],
+        "HasNestedGroups": false,
+        "Left": -139.39590920626944,
+        "Top": -1807.2515264289989,
+        "Width": 0.0,
+        "Height": 0.0,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "5143d3ffd55a4f988c6d6bdba2e1f3f6",
+        "Title": "If you select for your last selection a duct that has another conneciton with an element not in your route(such as a duct that continues on) you will get an error. Typically you would select ending element such as a air terminal. If it does get a duct that has connecitons not in the route it will return a null for those. \r\n\r\nThe ducts \r\n\r\nExample of a bad selelction. [[duct, duct,], [duct, null]]",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [],
+        "HasNestedGroups": false,
+        "Left": 1276.1979435259946,
+        "Top": -997.16106358661284,
+        "Width": 0.0,
+        "Height": 0.0,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "297754a1cdf44acca880ced2354afcff",
+        "Title": "This finds ducts that have taps.",
+        "DescriptionText": null,
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [],
+        "HasNestedGroups": false,
+        "Left": 928.11172396511006,
+        "Top": -1265.1866438976258,
+        "Width": 0.0,
+        "Height": 0.0,
+        "FontSize": 36.0,
+        "GroupStyleId": "00000000-0000-0000-0000-000000000000",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      }
+    ],
+    "X": -1264.3110160071351,
+    "Y": 2115.7546190400863,
+    "Zoom": 1.4485516840046579
+  }
+}
