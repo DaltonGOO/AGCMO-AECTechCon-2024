@@ -22,6 +22,8 @@ AGCMO - AECTechCon is an architecture, engineering, and construction technology 
 
 [Class Content](https://github.com/DaltonGOO/AGCMO-AECTechCon-2024/tree/main/Empowering%20AEC%20with%20pyRevit%20From%20Model%20Performance%20to%20KPIs)
 
+[pyRevit Notion](https://pyrevitlabs.notion.site/pyRevit-bd907d6292ed4ce997c46e84b6ef67a0)
+
 ## Socials
 YouTube: [The BIM Coordinator](https://www.youtube.com/@TheBIMCoordinator/featured)
 
